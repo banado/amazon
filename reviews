@@ -1,0 +1,92 @@
+from selenium import webdriver as wd
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+import requests
+import re
+import time
+from selenium.webdriver.chrome.options import Options
+from bs4 import BeautifulSoup
+import pandas as pd
+import os
+from datetime import datetime
+
+options = Options()
+
+
+# chrome_options.add_argument("--headless")
+options.add_argument("--window-size=1920x1080")
+options.add_argument("disable-gpu")
+driver=wd.Chrome(executable_path = 'C:/Users/동섭/chromedriver.exe',options=options)
+
+
+asin='B07PP4882Q'
+url='\
+https://www.amazon.com/product-reviews/{}/ref=cm_cr_arp_d_viewopt_srt?ie=UTF8&reviewerType=all_reviews&sortBy=recent&pageNumber=1'.format(asin)
+
+driver.get(url)
+driver.implicitly_wait(10)
+res=driver.page_source
+html=BeautifulSoup(res,'html.parser')
+total_reviews=int(html.find('span',{'class':'a-size-medium totalReviewCount'}).text)
+total_pages=int((total_reviews/10)+1)
+
+date=[]
+model=[]
+rating=[]
+title=[]
+body=[]
+
+while len(date) <= total_reviews:
+    source=driver.page_source
+    bs_obj=BeautifulSoup(source,"html.parser")
+        
+        
+    date_list=bs_obj.findAll('span',{'data-hook':'review-date'})
+    for i in date_list:
+        date.append(i.text)
+            
+    model_list=bs_obj.findAll('a',{'data-hook':'format-strip'})
+    for o in model_list:
+        model.append(o.text.split(' ')[1][:3])
+            
+    rating_list=bs_obj.findAll('i',{'data-hook':'review-star-rating'})
+    for k in rating_list:
+        rating.append(int(k.text.split(' ')[0][0]))
+            
+    title_list=bs_obj.findAll("a",{'data-hook':'review-title'})
+    for m in title_list:
+        title.append(m.text)
+            
+    body_list=bs_obj.findAll('span',{'data-hook':'review-body'})
+    for n in body_list:
+        body.append(n.text)
+        
+    try:
+        driver.find_element_by_class_name("a-last").click()
+        
+        WebDriverWait(driver, 15).until(
+            # 지정한 한개 요소가 올라면 웨이트 종료
+            EC.presence_of_element_located(By.XPATH, '//*[@id="cm_cr-pagination_bar"]/ul/li[2]/a')
+        )
+        time.sleep(3)
+    except:
+        driver.close()
+        driver.quit()
+
+
+df=pd.DataFrame({'Date':date,'Rating':rating,"Model":model,"TItle":title,"Body":body})
+df['Int_date']=pd.to_datetime(df['Date'],format='%B %d, %Y')
+df['Month']=df['Int_date'].dt.month
+df['Year']=df['Int_date'].dt.year
+
+
+
+Reviews_per_month_count=pd.DataFrame(df.groupby(['Year','Month'])['Rating'].count())
+Reviews_per_month_count=Reviews_per_month_count.rename(columns={'Rating':'Rating_Count'})
+Reviews_per_month_sum=pd.DataFrame(df.groupby(['Year','Month'])['Rating'].sum())
+Reviews_per_month_sum=Reviews_per_month_sum.rename(columns={'Rating':'Rating_sum'})
+summary_table=pd.concat([Reviews_per_month_sum,Reviews_per_month_count],axis=1)
+summary_table['Avg_rating']=summary_table['Rating_sum']/summary_table['Rating_Count']
+print(summary_table)
